@@ -82,8 +82,16 @@ export const connectionDetails = sdk.Action.withoutInput(
     const externalRelayPort =
       (range?.externalStartPort ?? firstPort) + (relayPort - firstPort)
     const standardPorts = externalIdPort === idServerPort
-    const withPort = (port: number) =>
-      hostnames.map((h) => (standardPorts ? h : `${h}:${port}`)).join('\n')
+    const perAddress = (label: string, port: number) =>
+      hostnames.map((h, i) => ({
+        type: 'single' as const,
+        name: hostnames.length > 1 ? `${label} ${i + 1}` : label,
+        description: null,
+        value: standardPorts ? h : `${h}:${port}`,
+        masked: false,
+        copyable: true,
+        qr: false,
+      }))
 
     return {
       version: '1',
@@ -99,24 +107,18 @@ export const connectionDetails = sdk.Action.withoutInput(
         type: 'group',
         value: [
           {
-            type: 'single',
+            type: 'group',
             name: i18n('ID server'),
             description: null,
-            value: withPort(externalIdPort),
-            masked: false,
-            copyable: true,
-            qr: false,
+            value: perAddress(i18n('ID server'), externalIdPort),
           },
           {
-            type: 'single',
+            type: 'group',
             name: i18n('Relay server'),
             description: standardPorts
               ? i18n('Optional: clients derive it from the ID server address.')
               : null,
-            value: withPort(externalRelayPort),
-            masked: false,
-            copyable: true,
-            qr: false,
+            value: perAddress(i18n('Relay server'), externalRelayPort),
           },
           {
             type: 'single',
