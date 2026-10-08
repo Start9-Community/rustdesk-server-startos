@@ -34,13 +34,10 @@ verified, tried, and decided belongs in the commit message and the PR body.
 
 ## This repo
 
-- **Keep the `Dockerfile`; do not switch the manifest to `dockerTag`.** The upstream image is
-  `FROM scratch` with no `CMD` and no `/etc/passwd`: `s9pk pack` fails with
-  `no command specified`, and a daemon then fails to launch with `open r /etc/passwd`. The
-  upstream version is pinned on the `FROM` line, not in `startos/manifest/index.ts`.
-- **`hbbr` must `requires: ['hbbs']`.** The relay loads the key pair `hbbs` writes into the
-  shared volume on its first start; started first, it would generate a different pair and the
-  two would disagree.
-- **`connection-details` reads the range binding, not `host.bindings`.** A port-range
-  interface has no filled `addressInfo`, so the action reproduces the OS's enabled/disabled
-  rules itself in `clientHostnames`; change both together if the OS rules change.
+- **Keep the `Dockerfile`; do not switch the manifest to `dockerTag`.** The upstream image has
+  no `CMD` and no `/etc/passwd`, so the pack and the daemons both fail without it. The upstream
+  version is pinned on the `FROM` line, not in `startos/manifest/index.ts`.
+- **`hbbr` must `requires: ['hbbs']`.** Started first, it generates its own key pair and the two
+  daemons disagree.
+- **Change `clientHostnames` in `connection-details` whenever the OS's address rules change.** A
+  port-range binding has no filled `addressInfo`, so the action reapplies those rules itself.
