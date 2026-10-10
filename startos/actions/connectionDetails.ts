@@ -9,30 +9,152 @@ import {
   relayPort,
 } from '../utils'
 
+// Where a client reaches the server from, so the action can name each address
+// by what it is instead of numbering them. Derived from the hostname's kind,
+// its public flag, and whether its gateway is a WireGuard tunnel: StartOS
+// names every tunnel gateway `wg<n>` (start-core, net/tunnel.rs), while a LAN
+// gateway keeps its kernel name (`eth0`, `enp2s0`, `wlan0`).
+type Reach =
+  | 'lan'
+  | 'mdns'
+  | 'tunnel'
+  | 'tunnel-public'
+  | 'router-public'
+  | 'public-domain'
+  | 'private-domain'
+
+type ClientAddress = { hostname: string; reach: Reach; gateway: string }
+
+const reachOrder: Record<Reach, number> = {
+  lan: 0,
+  mdns: 1,
+  tunnel: 2,
+  'tunnel-public': 3,
+  'router-public': 4,
+  'public-domain': 5,
+  'private-domain': 6,
+}
+
+const isTunnelGateway = (gateway: string) => /^wg\d+$/.test(gateway)
+
 // The addresses a client off this server can use, applying the same
 // enabled/disabled rules the Interfaces page applies to the range: loopback
 // and the container bridge are dropped, a public IP counts only once the
 // user has enabled it on the interface, and everything else counts unless
-// the user disabled it there.
-function clientHostnames(range: T.RangeBindInfo): string[] {
+// the user disabled it there. IPv6 never appears (a range is IPv4-only) and
+// a plugin address such as Tor is dropped: the ID server needs UDP.
+function clientAddresses(range: T.RangeBindInfo): ClientAddress[] {
   const enabled = new Set(range.addresses.enabled)
   const disabled = new Set(
     range.addresses.disabled.map(([hostname, port]) => `${hostname}:${port}`),
   )
   const port = range.externalStartPort
-  const usable = (h: T.HostnameInfo) => {
-    const kind = h.metadata.kind
-    if (kind === 'ipv4' && h.metadata.gateway === 'lxcbr0') return false
-    if (kind === 'ipv4' && h.hostname === '127.0.0.1') return false
-    if (kind === 'ipv4' && h.public) return enabled.has(`${h.hostname}:${port}`)
-    if (kind === 'ipv4' || kind === 'mdns') return true
-    if (kind === 'private-domain' || kind === 'public-domain') return true
-    return false
+  const classify = (h: T.HostnameInfo): ClientAddress | null => {
+    const { hostname } = h
+    const m = h.metadata
+    switch (m.kind) {
+      case 'ipv4': {
+        if (m.gateway === 'lxcbr0' || m.gateway === 'lo') return null
+        if (hostname === '127.0.0.1') return null
+        const tunnel = isTunnelGateway(m.gateway)
+        if (h.public) {
+          if (!enabled.has(`${hostname}:${port}`)) return null
+          return {
+            hostname,
+            reach: tunnel ? 'tunnel-public' : 'router-public',
+            gateway: m.gateway,
+          }
+        }
+        return {
+          hostname,
+          reach: tunnel ? 'tunnel' : 'lan',
+          gateway: m.gateway,
+        }
+      }
+      case 'mdns':
+        return { hostname, reach: 'mdns', gateway: m.gateways.join(', ') }
+      case 'private-domain':
+        return {
+          hostname,
+          reach: 'private-domain',
+          gateway: m.gateways.join(', '),
+        }
+      case 'public-domain':
+        return { hostname, reach: 'public-domain', gateway: m.gateway }
+      default:
+        return null
+    }
   }
   return range.addresses.available
-    .filter(usable)
     .filter((h) => !disabled.has(`${h.hostname}:${h.port ?? port}`))
-    .map((h) => h.hostname)
+    .map(classify)
+    .filter((a): a is ClientAddress => a !== null)
+    .sort((a, b) => reachOrder[a.reach] - reachOrder[b.reach])
+}
+
+// The field name and the one-line explanation shown under each address.
+function describe({ reach, gateway }: ClientAddress): {
+  name: string
+  description: string
+} {
+  switch (reach) {
+    case 'lan':
+      return {
+        name: i18n('LAN IPv4'),
+        description: i18n(
+          'This server’s address on your local network, on ${gateway}. Use it from devices on that network.',
+          { gateway },
+        ),
+      }
+    case 'mdns':
+      return {
+        name: i18n('Local name'),
+        description: i18n(
+          'This server’s .local name, on ${gateway}. Use it from devices on those networks that can resolve .local names.',
+          { gateway },
+        ),
+      }
+    case 'tunnel':
+      return {
+        name: i18n('Tunnel IPv4'),
+        description: i18n(
+          'This server’s address inside the WireGuard tunnel on ${gateway}. Use it only from devices connected to that tunnel.',
+          { gateway },
+        ),
+      }
+    case 'tunnel-public':
+      return {
+        name: i18n('Public IPv4 via tunnel'),
+        description: i18n(
+          'The public address of the tunnel server on ${gateway}. Use it from anywhere on the internet.',
+          { gateway },
+        ),
+      }
+    case 'router-public':
+      return {
+        name: i18n('Public IPv4 via router'),
+        description: i18n(
+          'Your router’s public address, on ${gateway}. Use it from the internet once the router forwards the RustDesk ports to this server.',
+          { gateway },
+        ),
+      }
+    case 'public-domain':
+      return {
+        name: i18n('Domain'),
+        description: i18n(
+          'A public name for this server, on ${gateway}. Use it from anywhere the name resolves.',
+          { gateway },
+        ),
+      }
+    case 'private-domain':
+      return {
+        name: i18n('Private domain'),
+        description: i18n(
+          'A private name for this server, on ${gateway}. Use it from networks where that name resolves.',
+          { gateway },
+        ),
+      }
+  }
 }
 
 export const connectionDetails = sdk.Action.withoutInput(
@@ -69,8 +191,8 @@ export const connectionDetails = sdk.Action.withoutInput(
 
     const host = await sdk.host.getOwn(effects, hostId).once()
     const range = host?.bindingRanges[firstPort]
-    const hostnames = range ? clientHostnames(range) : []
-    if (!hostnames.length) {
+    const addresses = range ? clientAddresses(range) : []
+    if (!addresses.length) {
       throw new Error(
         i18n(
           'No address is enabled on the RustDesk interface yet. Enable one there and run this again.',
@@ -82,12 +204,11 @@ export const connectionDetails = sdk.Action.withoutInput(
     const externalRelayPort =
       (range?.externalStartPort ?? firstPort) + (relayPort - firstPort)
     const standardPorts = externalIdPort === idServerPort
-    const perAddress = (label: string, port: number) =>
-      hostnames.map((h, i) => ({
+    const perAddress = (port: number) =>
+      addresses.map((a) => ({
         type: 'single' as const,
-        name: hostnames.length > 1 ? `${label} ${i + 1}` : label,
-        description: null,
-        value: standardPorts ? h : `${h}:${port}`,
+        ...describe(a),
+        value: standardPorts ? a.hostname : `${a.hostname}:${port}`,
         masked: false,
         copyable: true,
         qr: false,
@@ -110,7 +231,7 @@ export const connectionDetails = sdk.Action.withoutInput(
             type: 'group',
             name: i18n('ID server'),
             description: null,
-            value: perAddress(i18n('ID server'), externalIdPort),
+            value: perAddress(externalIdPort),
           },
           {
             type: 'group',
@@ -118,7 +239,7 @@ export const connectionDetails = sdk.Action.withoutInput(
             description: standardPorts
               ? i18n('Optional: clients derive it from the ID server address.')
               : null,
-            value: perAddress(i18n('Relay server'), externalRelayPort),
+            value: perAddress(externalRelayPort),
           },
           {
             type: 'single',

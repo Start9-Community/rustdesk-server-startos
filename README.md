@@ -101,6 +101,8 @@ Run it when setting up a client, or to recover the key. It reads `id_ed25519.pub
 
 The address list applies the same rules the Interfaces page applies: loopback and the container bridge are omitted, a public IP is listed only once the user has enabled it on the interface, and a private address or domain is listed unless the user disabled it. The action reproduces those rules itself because a range binding, unlike a single-port binding, carries no pre-filtered address set.
 
+Each address is its own copyable field, named by what it is and described by where a client can use it from: LAN IPv4, local name (`.local`), tunnel IPv4 (the server's address inside a WireGuard tunnel), public IPv4 via tunnel or via router, domain, private domain. The kind comes from the hostname's metadata plus one StartOS convention: a gateway named `wg<n>` is a WireGuard tunnel, so a public IPv4 on it is the tunnel server's address and a private one is the server's address inside the tunnel. Each description names the gateway so the user can match it to the Interfaces page.
+
 ### `configure`
 
 Run it to force every session through the relay, or to point clients at a relay that lives somewhere other than the ID server's address on the standard relay port. It writes `store.json`; `main.ts` picks the change up and restarts both daemons, which drops any session in progress for a few seconds. Safe to repeat.
