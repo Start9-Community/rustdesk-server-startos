@@ -38,7 +38,7 @@ One image, built by the package `FROM` upstream's classic `rustdesk/rustdesk-ser
 | ----------------- | ------------------------------------------ | ------------------------------------------------------------ |
 | `rustdesk-server` | `Dockerfile` in this repo, `FROM` upstream | `hbbs` in subcontainer `hbbs`, `hbbr` in subcontainer `hbbr` |
 
-The `Dockerfile` adds only what StartOS needs and upstream omits: a `CMD` (the pack step exports images through `docker create`, which refuses an image without one) and an `/etc/passwd` and `/etc/group` naming root (StartOS resolves a daemon's user from the container's passwd file). Both files are checked in under `docker/etc/`. The package publishes x86_64 and aarch64. It has been run and tested on x86_64 only: the aarch64 build packs, but has never run on ARM hardware (see [Limitations](#limitations-and-differences)).
+The `Dockerfile` adds only what StartOS needs and upstream omits: a `CMD` (start-cli before 2.4.0 exported images through `docker create`, which refuses an image without one), an `/etc/passwd` and `/etc/group` naming root (StartOS resolves a daemon's user from the container's passwd file), and an empty `/proc` (StartOS mounts procfs there when a daemon starts and does not create it; `docker create` used to add it, but start-cli 2.4.0 and later export the image directly). Both files are checked in under `docker/etc/`. The package publishes x86_64 and aarch64. It has been run and tested on x86_64 only: the aarch64 build packs, but has never run on ARM hardware (see [Limitations](#limitations-and-differences)).
 
 Each daemon runs the binary directly, not an entrypoint, with the data volume as its working directory, because both binaries read and write their working directory rather than a configured path. `hbbr` waits for `hbbs` to report healthy before starting, so the key pair `hbbs` writes on first start exists before `hbbr` loads it. There is no shell in either subcontainer, so `start-cli package attach` cannot run commands inside them; the package's own log carries both daemons' output.
 
@@ -100,6 +100,8 @@ Two actions, both user-facing.
 Run it when setting up a client, or to recover the key. It reads `id_ed25519.pub` from the data volume and the range binding's address list, and returns the ID server addresses, the relay addresses, and the key. Read-only and instant; safe to repeat. It fails, with a message saying so, if the service has never started (no key yet) or if no address is enabled on the interface.
 
 The address list applies the same rules the Interfaces page applies: loopback and the container bridge are omitted, a public IP is listed only once the user has enabled it on the interface, and a private address or domain is listed unless the user disabled it. The action reproduces those rules itself because a range binding, unlike a single-port binding, carries no pre-filtered address set.
+
+Each address is its own copyable field, named by what it is and described by where a client can use it from: LAN IPv4, local name (`.local`), tunnel IPv4 (the server's address inside a WireGuard tunnel), public IPv4 via tunnel or via router, domain, private domain. The kind comes from the hostname's metadata plus one StartOS convention: a gateway named `wg<n>` is a WireGuard tunnel, so a public IPv4 on it is the tunnel server's address and a private one is the server's address inside the tunnel. Each description names the gateway so the user can match it to the Interfaces page.
 
 ### `configure`
 

@@ -14,7 +14,7 @@ It exposes one interface, **RustDesk**, covering the three ports the clients use
 ## Getting set up
 
 1. Start the service and wait for both **ID Server** and **Relay Server** to show healthy.
-2. Run **Connection Details**. It shows the address to enter as the ID server, the relay address, and the key.
+2. Run **Connection Details**. It shows every address a client can enter as the ID server, each labeled by where it works from (your local network, the tunnel, the internet), the matching relay addresses, and the key.
 3. Install the RustDesk client on each device you want to control or control from.
 4. In the client, open **Settings**, then **Network**, then **ID/Relay server**. Enter the ID server address, paste the key, and leave the relay server blank unless Connection Details told you otherwise.
 5. The client's home screen shows **Ready** once it has registered. Do the same on a second device, then connect to it by the ID the client displays.
@@ -27,7 +27,7 @@ To give the server a name such as `rustdesk.example.com`, create a DNS record at
 
 ### Connection Details
 
-Run it whenever you set up a new client, or if you need the key again. It lists the addresses currently enabled on the RustDesk interface. Every device must use the same key. If the key is ever exposed to someone you do not trust, uninstall and reinstall the service to get a new one, then update every client.
+Run it whenever you set up a new client, or if you need the key again. It lists the addresses currently enabled on the RustDesk interface, each labeled by what it is and where to use it from: the LAN address and `.local` name from your own network, the tunnel address from devices inside the tunnel, and a public address or domain from anywhere. Every device must use the same key. If the key is ever exposed to someone you do not trust, uninstall and reinstall the service to get a new one, then update every client.
 
 ### Configure
 
